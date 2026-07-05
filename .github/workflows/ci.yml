@@ -1,0 +1,59 @@
+name: ci
+on:
+ push:
+   branches:
+     - feature/**
+env:
+    PYTHON_VERSION: "3.11"
+    NODE_VERSION: "22"
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION}}
+          cache: "pip"
+          cache-dependency-path: ./backend/requirements.txt
+        
+      - name: Python Version
+        run: python --version
+          
+      - name: Install Backend Dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+        
+      - name: Linting Tools
+        run: pip install black flake8
+        
+      - name: Backend Black Linting
+        working-directory: backend
+        run: black --check .
+        
+      - name: Backend Flake8 Linting
+        working-directory: backend
+        run: flake8 .
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION}}
+          cache: "yarn"
+          cache-dependency-path: ./frontend/yarn.lock
+          
+      - name: Node version
+        run: node --version
+        
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+        
+      - name: Frontend Eslint Linting
+        working-directory: frontend
+        run: yarn eslint src --max-warnings=0 
+
+      
