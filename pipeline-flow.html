@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Wayfarer — Pipeline Flow</title>
+<style>
+  :root {
+    --navy: #1b2a4a;
+    --gold: #c9a227;
+    --cream: #f7f7f5;
+    --ink: #1d1d1d;
+    --muted: #6b7280;
+    --gray: #d1d5db;
+    --amber: #c9a227;
+    --green: #2f7a3d;
+    --red: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--cream);
+    color: var(--ink);
+    padding: 2rem;
+  }
+  h1 { color: var(--navy); font-size: 1.4rem; margin: 0 0 0.25rem; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+
+  .config-bar {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 2rem;
+    align-items: end;
+  }
+  .config-bar label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+  .config-bar input { padding: 0.45rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; width: 220px; }
+  .config-bar button {
+    background: var(--navy); color: white; border: none;
+    padding: 0.55rem 1.1rem; border-radius: 4px; cursor: pointer; font-weight: 600;
+  }
+  .config-bar button:hover { background: #14213a; }
+
+  .flow {
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .node {
+    position: relative;
+    background: white;
+    border: 1px solid var(--gray);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0;
+  }
+  .node .title { font-weight: 700; font-size: 0.95rem; }
+  .node .subtitle-line { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+  .node .repo-tag {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-bottom: 0.2rem;
+  }
+  .node.pending { border-left: 4px solid var(--gray); }
+  .node.in_progress { border-left: 4px solid var(--amber); background: #FFFDF7; }
+  .node.in_progress .title { color: #633806; }
+  .node.success { border-left: 4px solid var(--green); background: #F7FBF5; }
+  .node.success .title { color: #1c4620; }
+  .node.failure { border-left: 4px solid var(--red); background: #FDF6F6; }
+  .node.failure .title { color: #6b120c; }
+  .node.gate { border-left: 4px solid var(--gold); background: #FFFCF2; }
+
+  .connector {
+    width: 2px;
+    height: 28px;
+    background: var(--gray);
+    margin: 0 auto;
+  }
+  .connector.done { background: var(--green); }
+
+  .badge {
+    position: absolute;
+    top: 1rem;
+    right: 1.25rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.2rem 0.5rem;
+    border-radius: 10px;
+    background: var(--gray);
+    color: white;
+  }
+  .badge.in_progress { background: var(--amber); }
+  .badge.success { background: var(--green); }
+  .badge.failure { background: var(--red); }
+
+  .last-updated { font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 1.5rem; }
+
+  .substeps {
+    list-style: none;
+    padding: 0;
+    margin: 0.75rem 0 0;
+    border-top: 1px solid #eee;
+    padding-top: 0.5rem;
+  }
+  .substep {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+    padding: 0.15rem 0;
+  }
+  .subdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gray);
+    flex-shrink: 0;
+  }
+  .substep.success .subdot { background: var(--green); }
+  .substep.success { color: #1c4620; }
+  .substep.failure .subdot { background: var(--red); }
+  .substep.failure { color: #6b120c; }
+  .substep.in_progress .subdot { background: var(--amber); animation: pulse 1s ease-in-out infinite; }
+  .substep.in_progress { color: #633806; }
+  .dur { margin-left: auto; font-size: 0.7rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Wayfarer — Pipeline Flow</h1>
+<p class="subtitle">One continuous flow across both repos, colored by live GitHub Actions status.</p>
+
+<div class="config-bar">
+  <div>
+    <label for="dev-repo">Dev repo (owner/name)</label>
+    <input id="dev-repo" value="prithvi08242/hotel-management-dev" />
+  </div>
+  <div>
+    <label for="test-repo">SDET repo (owner/name)</label>
+    <input id="test-repo" value="prithvi08242/hotel-managment-test" />
+  </div>
+  <button onclick="refreshAll()">Refresh now</button>
+</div>
+
+<div class="flow" id="flow"></div>
+<p class="last-updated" id="last-updated"></p>
+
+<script>
+// Fixed logical pipeline. Each entry maps to a real job name in one of the
+// two repos (source: "dev" or "test"). "trigger"/"gate" have no matching
+// job — they're rendered as fixed markers in the flow, not fetched.
+const PIPELINE = [
+  { id: "trigger", label: "Push to feature branch", sub: "git push, PR opened", source: "trigger" },
+  { id: "lint", label: "Lint", sub: "black, flake8, eslint", source: "dev", jobName: "lint" },
+  { id: "backend-test", label: "Backend Test", sub: "pytest API tests", source: "dev", jobName: "backend-test" },
+  { id: "frontend-test", label: "Frontend Test", sub: "Jest unit tests", source: "dev", jobName: "frontend-test" },
+  { id: "build-and-push", label: "Build & Push", sub: "Docker image to ECR", source: "dev", jobName: "build-and-push" },
+  { id: "deploy-staging", label: "Deploy Staging", sub: "K8s rolling deploy", source: "test", jobName: "deploy-staging" },
+  { id: "e2e", label: "E2E Tests", sub: "Playwright against staging", source: "test", jobName: "e2e" },
+  { id: "gate", label: "Go / No-Go Gate", sub: "Pass promotes, fail blocks", source: "gate" },
+  { id: "deploy-prod", label: "Deploy Production", sub: "HA replicas, self-healing", source: "test", jobName: "deploy-production" },
+];
+
+async function fetchJobs(ownerRepo) {
+  const runsRes = await fetch(`https://api.github.com/repos/${ownerRepo}/actions/runs?per_page=1`);
+  if (!runsRes.ok) return [];
+  const runsData = await runsRes.json();
+  if (!runsData.workflow_runs || runsData.workflow_runs.length === 0) return [];
+  const run = runsData.workflow_runs[0];
+  const jobsRes = await fetch(run.jobs_url);
+  const jobsData = await jobsRes.json();
+  return jobsData.jobs || [];
+}
+
+function statusOf(job) {
+  if (!job) return "pending";
+  if (job.status === "completed") return job.conclusion === "success" ? "success" : "failure";
+  if (job.status === "in_progress" || job.status === "queued") return "in_progress";
+  return "pending";
+}
+
+function badgeText(status) {
+  return { pending: "PENDING", in_progress: "RUNNING", success: "PASSED", failure: "FAILED" }[status];
+}
+
+function formatDuration(startedAt, completedAt) {
+  if (!startedAt) return '';
+  const start = new Date(startedAt).getTime();
+  const end = completedAt ? new Date(completedAt).getTime() : Date.now();
+  const seconds = Math.max(0, Math.round((end - start) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}m ${secs}s`;
+}
+
+async function refreshAll() {
+  const devRepo = document.getElementById('dev-repo').value.trim();
+  const testRepo = document.getElementById('test-repo').value.trim();
+
+  const [devJobs, testJobs] = await Promise.all([
+    fetchJobs(devRepo).catch(() => []),
+    fetchJobs(testRepo).catch(() => []),
+  ]);
+
+  const container = document.getElementById('flow');
+  container.innerHTML = '';
+
+  PIPELINE.forEach((stage, i) => {
+    let status = "pending";
+    let cssClass = "pending";
+
+    if (stage.source === "dev") {
+      const job = devJobs.find(j => j.name === stage.jobName);
+      status = statusOf(job);
+      cssClass = status;
+    } else if (stage.source === "test") {
+      const job = testJobs.find(j => j.name === stage.jobName);
+      status = statusOf(job);
+      cssClass = status;
+    } else if (stage.source === "gate") {
+      cssClass = "gate";
+    } else if (stage.source === "trigger") {
+      cssClass = "pending";
+    }
+
+    const node = document.createElement('div');
+    node.className = `node ${cssClass}`;
+    const repoTag = stage.source === "dev" ? "Dev repo" : stage.source === "test" ? "SDET repo" : "";
+
+    let job = null;
+    if (stage.source === "dev") job = devJobs.find(j => j.name === stage.jobName);
+    if (stage.source === "test") job = testJobs.find(j => j.name === stage.jobName);
+
+    let stepsHtml = '';
+    if (job && job.steps && job.steps.length) {
+      stepsHtml = '<ul class="substeps">' + job.steps.map(s => {
+        const sStatus = statusOf(s);
+        const dur = formatDuration(s.started_at, s.completed_at);
+        return `<li class="substep ${sStatus}"><span class="subdot"></span>${s.name}${dur ? `<span class="dur">${dur}</span>` : ''}</li>`;
+      }).join('') + '</ul>';
+    }
+
+    const jobDur = job ? formatDuration(job.started_at, job.completed_at) : '';
+
+    node.innerHTML = `
+      ${repoTag ? `<div class="repo-tag">${repoTag}</div>` : ''}
+      <div class="title">${stage.label}</div>
+      <div class="subtitle-line">${stage.sub}</div>
+      ${(stage.source === "dev" || stage.source === "test") ? `<span class="badge ${cssClass}">${badgeText(status)}${jobDur ? ' · ' + jobDur : ''}</span>` : ''}
+      ${stepsHtml}
+    `;
+    container.appendChild(node);
+
+    if (i < PIPELINE.length - 1) {
+      const connector = document.createElement('div');
+      connector.className = `connector ${status === 'success' ? 'done' : ''}`;
+      container.appendChild(connector);
+    }
+  });
+
+  document.getElementById('last-updated').textContent =
+    'Last updated: ' + new Date().toLocaleTimeString();
+}
+
+refreshAll();
+setInterval(refreshAll, 15000);
+</script>
+
+</body>
+</html>
