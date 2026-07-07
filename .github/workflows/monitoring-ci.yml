@@ -2,7 +2,7 @@ name: Deploy Dashboard
 
 on:
   push:
-    branches: [feateure/ci]
+    branches: [feature/ci]
     paths:
       - "pipeline-flow.html"
 
