@@ -1,13 +1,31 @@
 services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: wayfarer
+      POSTGRES_PASSWORD: wayfarer_dev_pw
+      POSTGRES_DB: wayfarer
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wayfarer"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   backend:
     image: hms-back-img
     ports:
-    - "8000:8000"
-      
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://wayfarer:wayfarer_dev_pw@postgres:5432/wayfarer
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   frontend:
     image: hms-front-img
     ports:
-    - "5173:5173"
-    
+      - "5173:5173"
     depends_on:
-    - backend
+      - backend
